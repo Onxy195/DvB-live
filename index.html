@@ -4,6 +4,16 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#121214" />
+<script>
+// Gespeichertes Theme so früh wie möglich setzen, damit die Seite nicht kurz im
+// falschen Modus aufblitzt, bevor app.js geladen ist.
+(function () {
+  try {
+    var t = localStorage.getItem("dvbTheme") || "dark";
+    document.documentElement.setAttribute("data-theme", t);
+  } catch (e) { /* Privatmodus o.ä. - dann bleibt es beim Standard (dunkel) */ }
+})();
+</script>
 <title>DVB Live by ONXY</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -16,8 +26,20 @@
 <div class="app">
   <aside class="panel">
     <header class="brand">
-      <div class="brand-bar"></div>
-      <h1>DVB <span>Live</span><em class="byline">by ONXY</em></h1>
+      <span class="brand-badge">DVB</span>
+      <div class="brand-text">
+        <h1>Live</h1>
+        <span class="byline">by ONXY</span>
+      </div>
+      <button id="themeToggle" class="theme-toggle" title="Hell-/Dunkelmodus umschalten" aria-label="Hell-/Dunkelmodus umschalten">
+        <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="12" r="4.2" />
+          <path d="M12 3v2.2M12 18.8V21M4.9 4.9l1.55 1.55M17.55 17.55L19.1 19.1M3 12h2.2M18.8 12H21M4.9 19.1l1.55-1.55M17.55 6.45L19.1 4.9" />
+        </svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M20.5 14.7A8.3 8.3 0 1 1 9.3 3.5a6.6 6.6 0 0 0 11.2 11.2z" />
+        </svg>
+      </button>
     </header>
 
     <section id="searchSection" class="search-section">
@@ -44,6 +66,18 @@
 
     <div class="scroll-area">
       <ul id="departuresList" class="departures"></ul>
+
+      <!-- Bewusst NACH der Live-Abfahrtstafel: die kommenden Verbindungen sind das
+           Wichtigste und sollen zuerst zu sehen sein, ohne dass man erst an vergangenen
+           Fahrten vorbeiscrollen muss. -->
+      <section id="departedSection" class="departed hidden">
+        <button id="departedToggle" class="departed-head" aria-expanded="false">
+          <span class="chev">▸</span>
+          <span>Bereits abgefahren &middot; noch unterwegs</span>
+          <span id="departedCount" class="departed-count">0</span>
+        </button>
+        <ul id="departedList" class="departed-list hidden"></ul>
+      </section>
 
       <section id="historySection" class="history hidden">
         <button id="historyToggle" class="history-head" aria-expanded="false">

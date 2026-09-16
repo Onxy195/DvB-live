@@ -1,11 +1,14 @@
 :root {
-  --ink: #121214;
+  /* Dunkelmodus (Standard) */
+  --ink: #f2f1ec;
+  --muted: #9c9a92;
+  --bg: #121214;
   --panel: #1a1a1d;
   --panel-raised: #232326;
+  --panel-sunken: #202023;
   --hairline: #313136;
-  --paper: #f2f1ec;
-  --paper-dim: #9c9a92;
   --dvb-yellow: #ffcc00;
+  --dvb-yellow-tint: rgba(255, 204, 0, .14);
   --late: #e5484d;
   --early: #7aa7ff;
   --ontime: #3dd68c;
@@ -14,6 +17,28 @@
   --occ-high: #e5484d;
   --map-bg: #0d0d0e;
   --shadow: rgba(0, 0, 0, .35);
+  --stop-icon-border: #7aa7ff;
+}
+
+:root[data-theme="light"] {
+  --ink: #1c1e21;
+  --muted: #6b7280;
+  --bg: #eef0f2;
+  --panel: #ffffff;
+  --panel-raised: #f4f5f6;
+  --panel-sunken: #eceef0;
+  --hairline: #e2e4e8;
+  --dvb-yellow: #ffcc00;
+  --dvb-yellow-tint: rgba(255, 204, 0, .16);
+  --late: #c0293b;
+  --early: #2563eb;
+  --ontime: #0f8a5f;
+  --occ-low: #0f8a5f;
+  --occ-mid: #b5650b;
+  --occ-high: #c0293b;
+  --map-bg: #e7e9ec;
+  --shadow: rgba(20, 24, 30, .10);
+  --stop-icon-border: #2563eb;
 }
 
 * { box-sizing: border-box; }
@@ -23,8 +48,8 @@ html, body {
   height: 100%;
   height: 100dvh;
   overflow: hidden;
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--bg);
+  color: var(--ink);
   font-family: 'Inter', -apple-system, sans-serif;
   transition: background .3s ease, color .3s ease;
 }
@@ -62,38 +87,82 @@ html, body {
 }
 
 .brand {
-  padding: 22px 20px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px;
   border-bottom: 1px solid var(--hairline);
 }
 
-.brand-bar {
-  width: 34px;
-  height: 6px;
+/* Gelbes Markenzeichen, angelehnt an die offizielle DVB-Hausfarbe (Gelb/Schwarz) */
+.brand-badge {
+  flex-shrink: 0;
   background: var(--dvb-yellow);
-  border-radius: 3px;
-  margin-bottom: 12px;
+  color: var(--ink);
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+  padding: 7px 9px;
+  border-radius: 7px;
+  line-height: 1;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
 }
 
 .brand h1 {
   margin: 0;
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink);
 }
 
-.brand h1 span { color: var(--dvb-yellow); }
-
-.brand h1 .byline {
+.brand-text .byline {
   font-style: normal;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: .12em;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .1em;
   text-transform: uppercase;
-  color: var(--paper-dim);
+  color: var(--muted);
 }
+
+/* Hell-/Dunkelmodus-Umschalter */
+.theme-toggle {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid var(--hairline);
+  background: var(--panel-raised);
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .2s ease, transform .15s ease;
+}
+.theme-toggle:hover { background: var(--panel-sunken); }
+.theme-toggle:active { transform: scale(.92); }
+.theme-toggle svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* Im Dunkelmodus zeigt der Knopf eine Sonne (zum Umschalten auf hell),
+   im Hellmodus einen Mond (zum Umschalten auf dunkel). */
+.theme-toggle .icon-moon { display: none; }
+:root[data-theme="light"] .theme-toggle .icon-sun { display: none; }
+:root[data-theme="light"] .theme-toggle .icon-moon { display: block; }
 
 .search-section {
   border-bottom: 1px solid var(--hairline);
@@ -106,7 +175,7 @@ html, body {
   gap: 8px;
   background: none;
   border: none;
-  color: var(--paper);
+  color: var(--ink);
   font-family: inherit;
   font-size: 13.5px;
   font-weight: 600;
@@ -120,14 +189,14 @@ html, body {
   height: 16px;
   flex-shrink: 0;
   fill: none;
-  stroke: var(--paper-dim);
+  stroke: var(--muted);
   stroke-width: 2.1;
   stroke-linecap: round;
 }
 
 .search-head .chev {
   margin-left: auto;
-  color: var(--paper-dim);
+  color: var(--muted);
   transition: transform .2s ease;
   font-size: 12px;
 }
@@ -153,14 +222,14 @@ html, body {
   padding: 12px 14px;
   border-radius: 10px;
   border: 1px solid var(--hairline);
-  background: var(--panel-raised);
-  color: var(--paper);
+  background: var(--panel-sunken);
+  color: var(--ink);
   font-size: 16px;
   font-family: inherit;
 }
 
-.search input::placeholder { color: var(--paper-dim); }
-.search input:focus { outline: none; border-color: var(--dvb-yellow); }
+.search input::placeholder { color: var(--muted); }
+.search input:focus { outline: none; border-color: var(--dvb-yellow); background: var(--panel); }
 
 .results {
   list-style: none;
@@ -178,26 +247,27 @@ html, body {
 }
 
 .results li:hover { background: var(--panel-raised); }
-.results li .city { color: var(--paper-dim); font-size: 12px; display: block; }
+.results li .city { color: var(--muted); font-size: 12px; display: block; }
 
 .stop-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: 15px 20px;
   border-bottom: 1px solid var(--hairline);
   font-weight: 600;
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .stop-header button {
   background: none;
   border: none;
-  color: var(--paper-dim);
+  color: var(--muted);
   font-size: 20px;
   cursor: pointer;
   line-height: 1;
 }
+.stop-header button:hover { color: var(--ink); }
 
 .hidden { display: none !important; }
 
@@ -212,6 +282,13 @@ html, body {
   padding: 6px 10px;
 }
 
+.deps-loading {
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 18px 10px;
+}
+
 .dep-item {
   border-bottom: 1px solid var(--hairline);
 }
@@ -224,29 +301,53 @@ html, body {
   padding: 12px 10px;
   cursor: pointer;
   border-left: 3px solid transparent;
+  border-radius: 8px;
 }
 
 .departure:hover { background: var(--panel-raised); }
 
 .dep-item.active .departure {
-  background: var(--panel-raised);
+  background: var(--dvb-yellow-tint);
   border-left-color: var(--dvb-yellow);
 }
 
-.dep-item.departed .departure { opacity: .72; }
+.dep-item.departed .departure { opacity: .65; }
 
 .line-badge {
-  color: #1a1a1a;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  color: #1c1e21;
   font-weight: 800;
-  font-size: 14px;
+  font-size: 12.5px;
   text-align: center;
-  padding: 5px 0;
+  padding: 4px 0 5px;
   border-radius: 6px;
+  line-height: 1;
+}
+.line-badge .mot-icon { display: flex; }
+.line-badge .mot-icon svg { width: 15px; height: 15px; display: block; }
+.line-badge .line-num {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* DB-Fernverkehr: eigenes, wiedererkennbares Rot statt der gehashten Linienfarbe,
+   da diese Fahrten nicht von der DVB kommen und das auch optisch klar sein soll. */
+.line-badge.db-badge { background: #ec0016; color: #fff; }
+.tag.db-tag {
+  background: #ec0016;
+  color: #fff;
+  font-weight: 700;
 }
 
 .dep-info { min-width: 0; }
 .dep-info .direction {
   font-size: 14px;
+  font-weight: 500;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -257,7 +358,7 @@ html, body {
   white-space: nowrap;
 }
 .dep-info .sub {
-  color: var(--paper-dim);
+  color: var(--muted);
   font-size: 11px;
   margin-top: 3px;
   display: flex;
@@ -271,7 +372,7 @@ html, body {
   font-family: 'Space Mono', monospace;
 }
 
-.dep-time .clock { font-size: 15px; font-weight: 700; display: block; }
+.dep-time .clock { font-size: 15px; font-weight: 700; display: block; color: var(--ink); }
 .dep-time .delay { font-size: 11px; }
 .dep-time .delay.late { color: var(--late); }
 .dep-time .delay.early { color: var(--early); }
@@ -301,8 +402,8 @@ html, body {
   text-transform: uppercase;
   padding: 2px 6px;
   border-radius: 4px;
-  background: var(--hairline);
-  color: var(--paper-dim);
+  background: var(--panel-sunken);
+  color: var(--muted);
 }
 
 /* ---------- Aufklappbare Fahrt-Details ---------- */
@@ -317,7 +418,7 @@ html, body {
 }
 
 .trip-hint {
-  color: var(--paper-dim);
+  color: var(--muted);
   font-size: 12px;
   padding: 6px 2px;
 }
@@ -328,7 +429,7 @@ html, body {
   text-align: left;
   background: none;
   border: 1px dashed var(--hairline);
-  color: var(--paper-dim);
+  color: var(--muted);
   font-family: inherit;
   font-size: 11.5px;
   padding: 7px 10px;
@@ -337,8 +438,8 @@ html, body {
   margin: 6px 0 2px;
   transition: color .2s ease, border-color .2s ease;
 }
-.past-toggle:hover { color: var(--paper); border-color: var(--paper-dim); }
-.past-toggle.open { border-style: solid; color: var(--paper); }
+.past-toggle:hover { color: var(--ink); border-color: var(--muted); }
+.past-toggle.open { border-style: solid; color: var(--ink); background: var(--panel-raised); }
 
 .timeline {
   list-style: none;
@@ -381,11 +482,11 @@ html, body {
   height: 9px;
   border-radius: 50%;
   background: var(--panel);
-  border: 2px solid var(--paper-dim);
+  border: 2px solid var(--muted);
 }
 
-.tl-stop.past { opacity: .5; }
-.tl-stop.past::before { background: var(--paper-dim); border-color: var(--paper-dim); }
+.tl-stop.past { opacity: .55; }
+.tl-stop.past::before { background: var(--muted); border-color: var(--muted); }
 
 .tl-stop.next::before {
   border-color: var(--dvb-yellow);
@@ -394,8 +495,8 @@ html, body {
 }
 
 @keyframes next-stop-pulse {
-  0%, 100% { box-shadow: 0 0 0 4px rgba(255, 204, 0, .18); }
-  50%      { box-shadow: 0 0 0 7px rgba(255, 204, 0, .3); }
+  0%, 100% { box-shadow: 0 0 0 4px rgba(255, 204, 0, .22); }
+  50%      { box-shadow: 0 0 0 7px rgba(255, 204, 0, .34); }
 }
 
 .tl-stop .tl-name { line-height: 1.3; }
@@ -408,7 +509,7 @@ html, body {
   white-space: nowrap;
 }
 .tl-times .sched-strike {
-  color: var(--paper-dim);
+  color: var(--muted);
   text-decoration: line-through;
   margin-right: 5px;
   font-size: 11px;
@@ -421,11 +522,67 @@ html, body {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: .08em;
-  color: var(--paper-dim);
+  color: var(--muted);
   padding: 10px 4px 4px 12px;
 }
 
-/* ---------- Verlauf / frühere Verbindungen ---------- */
+/* ---------- Bereits abgefahrene, aber noch unterwegs befindliche Verbindungen ----------
+   Fahrten, die die gewählte Haltestelle schon verlassen haben, aber laut Fahrzeit noch
+   nicht am Ziel angekommen sein dürften - sonst ließe sich so eine Fahrt nicht mehr
+   wiederfinden, sobald sie aus der normalen Abfahrtstafel verschwunden ist. */
+.departed {
+  border-bottom: 1px solid var(--hairline);
+  margin-bottom: 4px;
+}
+
+.departed-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .03em;
+  padding: 14px 20px;
+  cursor: pointer;
+  text-align: left;
+}
+.departed-head:hover { color: var(--ink); }
+.departed-head .chev { transition: transform .2s ease; display: inline-block; }
+.departed-head[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.departed-count {
+  margin-left: auto;
+  background: var(--panel-sunken);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 11px;
+}
+
+.departed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 10px 6px;
+}
+
+/* Kleiner, statischer Hinweis statt des früheren "Frühere Abfahrten laden"-Buttons:
+   Die VVO-API liefert bei /dm keine echten Vergangenheitsdaten (time wird nicht
+   rückwirkend interpretiert - siehe app.js), ein Nachlade-Button hätte also nie
+   etwas gefunden. Bewusst sehr klein/unauffällig, da er nur Kontext liefert. */
+.earlier-hint {
+  text-align: center;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.4;
+  padding: 2px 14px 8px;
+  margin: 0 0 4px;
+  opacity: .75;
+}
+
+/* ---------- Verlauf (zuletzt besuchte Haltestellen) ---------- */
 .history {
   border-top: 1px solid var(--hairline);
   margin-top: 4px;
@@ -438,7 +595,7 @@ html, body {
   gap: 8px;
   background: none;
   border: none;
-  color: var(--paper-dim);
+  color: var(--muted);
   font-family: inherit;
   font-size: 12px;
   font-weight: 600;
@@ -447,12 +604,12 @@ html, body {
   padding: 14px 20px;
   cursor: pointer;
 }
-.history-head:hover { color: var(--paper); }
+.history-head:hover { color: var(--ink); }
 .history-head .chev { transition: transform .2s ease; display: inline-block; }
 .history-head[aria-expanded="true"] .chev { transform: rotate(90deg); }
 .history-count {
   margin-left: auto;
-  background: var(--panel-raised);
+  background: var(--panel-sunken);
   border-radius: 999px;
   padding: 1px 7px;
   font-size: 11px;
@@ -474,7 +631,7 @@ html, body {
   cursor: pointer;
 }
 .history-list li:hover { background: var(--panel-raised); }
-.history-list li.active { background: var(--panel-raised); }
+.history-list li.active { background: var(--dvb-yellow-tint); }
 
 .history-list .h-dir {
   font-size: 13.5px;
@@ -483,17 +640,17 @@ html, body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.history-list .h-meta { font-size: 11.5px; color: var(--paper-dim); }
+.history-list .h-meta { font-size: 11.5px; color: var(--muted); }
 .history-list .h-time {
   font-size: 11px;
-  color: var(--paper-dim);
+  color: var(--muted);
   white-space: nowrap;
 }
 
 .history-clear {
   background: none;
   border: none;
-  color: var(--paper-dim);
+  color: var(--muted);
   font-size: 11px;
   font-family: inherit;
   text-decoration: underline;
@@ -503,7 +660,7 @@ html, body {
 
 .empty-state, .error-state {
   padding: 24px 20px;
-  color: var(--paper-dim);
+  color: var(--muted);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -536,22 +693,22 @@ html, body {
   justify-content: center;
   font-weight: 800;
   font-size: 13px;
-  color: #1a1a1a;
-  border: 2px solid #1a1a1a;
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, .35);
+  color: #1c1e21;
+  border: 2px solid #1c1e21;
+  box-shadow: 0 0 0 4px rgba(28, 30, 33, .12), 0 2px 8px var(--shadow);
   animation: pulse 1.6s ease-in-out infinite;
 }
 
 /* Fahrt ist beendet: Marker steht still, kein Pulsieren mehr */
 .vehicle-icon.finished {
   animation: none;
-  opacity: .75;
-  filter: grayscale(35%);
+  opacity: .7;
+  filter: grayscale(45%);
 }
 
 @keyframes pulse {
-  0%, 100% { box-shadow: 0 0 0 4px rgba(255, 255, 255, .35); }
-  50% { box-shadow: 0 0 0 8px rgba(255, 255, 255, .12); }
+  0%, 100% { box-shadow: 0 0 0 4px rgba(28, 30, 33, .12), 0 2px 8px var(--shadow); }
+  50% { box-shadow: 0 0 0 8px rgba(28, 30, 33, .05), 0 2px 8px var(--shadow); }
 }
 
 /* Routenlinie: blendet beim Anzeigen/Entfernen sanft ein bzw. aus */
@@ -566,12 +723,13 @@ html, body {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  border: 1.5px solid rgba(0, 0, 0, .55);
+  border: 1.5px solid rgba(255, 255, 255, .85);
+  box-shadow: 0 1px 3px var(--shadow);
   animation: stop-pop .3s ease both;
 }
 
 .route-stop-dot.past {
-  opacity: .4;
+  opacity: .45;
   filter: grayscale(60%);
   animation: none;
 }
@@ -593,7 +751,7 @@ html, body {
 
 @keyframes arrival-ripple {
   0%   { filter: grayscale(0%); opacity: 1; }
-  100% { filter: grayscale(60%); opacity: .4; }
+  100% { filter: grayscale(60%); opacity: .45; }
 }
 
 @keyframes arrival-ring {
@@ -603,7 +761,7 @@ html, body {
 
 .route-stop-dot.focus {
   transform: scale(1.9);
-  box-shadow: 0 0 0 4px rgba(255, 204, 0, .35);
+  box-shadow: 0 0 0 4px rgba(255, 204, 0, .4);
 }
 
 @keyframes stop-pop {
@@ -611,8 +769,6 @@ html, body {
   to { opacity: 1; transform: scale(1); }
 }
 
-/* Die gesuchte Haltestelle - bewusst größer und kräftiger als alle anderen Punkte,
-   damit sie zwischen den Routen-Haltestellen sofort auffällt. */
 /* Karte-Vollbild-Knopf: blendet die komplette Leiste aus, sodass nur noch die Karte
    zu sehen ist. Bewusst oben RECHTS platziert - dort sitzt auf keinem Gerät ein
    Leaflet-eigenes Bedienelement, das ihn verdecken oder Klicks abfangen könnte. */
@@ -625,8 +781,8 @@ html, body {
   height: 40px;
   border-radius: 9px;
   border: 1px solid var(--hairline);
-  background: var(--panel-raised);
-  color: var(--paper);
+  background: var(--panel);
+  color: var(--ink);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -634,7 +790,7 @@ html, body {
   box-shadow: 0 2px 10px var(--shadow);
   transition: transform .15s ease, background .2s ease;
 }
-.panel-toggle:hover { transform: scale(1.06); }
+.panel-toggle:hover { transform: scale(1.06); background: var(--panel-raised); }
 .panel-toggle:active { transform: scale(.94); }
 .panel-toggle svg {
   width: 19px;
@@ -650,13 +806,13 @@ html, body {
 .panel-toggle[aria-pressed="true"] svg { transform: scaleX(-1); }
 
 .stop-icon {
-  background: var(--paper);
+  background: var(--panel);
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  border: 4px solid #3b82f6;
-  box-shadow: 0 0 0 4px rgba(59, 130, 246, .25);
-  transition: background .3s ease;
+  border: 4px solid var(--stop-icon-border);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--stop-icon-border) 25%, transparent), 0 2px 6px var(--shadow);
+  transition: background .3s ease, border-color .3s ease;
 }
 
 /* ---------- Handy: Hochformat ----------
@@ -671,8 +827,8 @@ html, body {
     border-bottom: 1px solid var(--hairline);
   }
   .app.panel-collapsed .panel { flex-basis: 0; height: 0; border-bottom-color: transparent; }
-  .brand { padding: 16px 16px 12px; }
-  .brand h1 { font-size: 19px; }
+  .brand { padding: 14px 16px; }
+  .brand h1 { font-size: 17px; }
   .departure { grid-template-columns: 38px 1fr auto; padding: 10px 8px; }
   .line-badge { font-size: 13px; }
   .search-body { max-height: 60vh; }
@@ -686,9 +842,8 @@ html, body {
   .app { flex-direction: row; }
   .panel { flex: 0 0 46vw; width: 46vw; height: auto; }
   .app.panel-collapsed .panel { flex-basis: 0; width: 0; }
-  .brand { padding: 10px 14px 8px; }
-  .brand-bar { margin-bottom: 6px; }
-  .brand h1 { font-size: 17px; }
+  .brand { padding: 10px 14px; gap: 10px; }
+  .brand h1 { font-size: 16px; }
   .search { padding: 10px 12px 0; }
   .search input { padding: 9px 12px; }
   .stop-header { padding: 10px 14px; font-size: 14px; }

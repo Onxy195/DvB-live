@@ -9,11 +9,47 @@ const API_BASE = "https://webapi.vvo-online.de";
 const DRESDEN_CENTER = [51.0504, 13.7373];
 const HISTORY_KEY = "dvbStopHistory";
 const HISTORY_MAX = 10;
+const DEPARTED_STORAGE_KEY = "dvbDepartedByStop";
 
 // DHDN / Gauss-Krüger Zone 4 (EPSG:31468) — die VVO-API liefert Koordinaten in diesem
 // System, nicht in WGS84. Umrechnung per proj4.
 const GK4 = "+proj=tmerc +lat_0=0 +lon_0=12 +k=1 +x_0=4500000 +y_0=0 +ellps=bessel " +
             "+towgs84=612.4,77,440.2,-0.054,0.057,-2.797,2.55 +units=m +no_defs";
+
+// ---------- Hell-/Dunkelmodus ----------
+
+const THEME_KEY = "dvbTheme";
+
+function currentTheme() {
+  return document.documentElement.getAttribute("data-theme") || "dark";
+}
+
+function setMapTheme(theme) {
+  if (!map || !tileLayer) return; // Karte noch nicht initialisiert
+  map.removeLayer(tileLayer);
+  tileLayer = L.tileLayer(TILE_URLS[theme], {
+    attribution: "Tiles &copy; Esri",
+    maxZoom: 19,
+    maxNativeZoom: 16,
+    keepBuffer: 4,
+  }).addTo(map);
+  tileLayer.bringToBack();
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  try { localStorage.setItem(THEME_KEY, theme); } catch { /* Privatmodus o.ä. */ }
+  document.querySelector('meta[name="theme-color"]')
+    .setAttribute("content", theme === "light" ? "#eef0f2" : "#121214");
+  setMapTheme(theme);
+}
+
+function initThemeToggle() {
+  const btn = document.getElementById("themeToggle");
+  btn.addEventListener("click", () => {
+    applyTheme(currentTheme() === "dark" ? "light" : "dark");
+  });
+}
 
 function gk4ToWgs84(rechtswert, hochwert) {
   const [lng, lat] = proj4(GK4, "WGS84", [rechtswert, hochwert]);
@@ -35,12 +71,34 @@ function colorForRoute(line, direction) {
   const h1 = hashString(key);
   const h2 = hashString(key.split("").reverse().join(""));
   const hue = Math.abs(h1) % 360;
-  const sat = 62 + (Math.abs(h2) % 26);        // 62–88 %
-  const light = 48 + (Math.abs(h1 >> 8) % 18); // 48–65 % - hält dunklen Text lesbar
+  const sat = 55 + (Math.abs(h2) % 24);        // 55–79 % - etwas gedeckter fürs helle Design
+  const light = 58 + (Math.abs(h1 >> 8) % 14); // 58–72 % - hält dunklen Text lesbar auf hellem Grund
   return `hsl(${hue}, ${sat}%, ${light}%)`;
 }
 
-let map, stopMarker;
+// ---------- Verkehrsmittel-Symbole ----------
+// Bewusst als Strichzeichnung (stroke statt fill) gebaut: so braucht es keine zweite
+// Farbe für "Fenster o.ä." und die Icons funktionieren auf jeder Badge-Hintergrundfarbe
+// (gehashtes Pastell für DVB-Linien, DB-Rot für Fernverkehr) ohne Anpassung.
+const ICON_BUS = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg"><path d="M4 15V7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8"/><path d="M4 15h16"/><path d="M4 15v1.2a1 1 0 0 0 1 1h1"/><path d="M20 15v1.2a1 1 0 0 1-1 1h-1"/><line x1="8" y1="8" x2="8" y2="12"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="16" y1="8" x2="16" y2="12"/><circle cx="8" cy="18.2" r="1.3"/><circle cx="16" cy="18.2" r="1.3"/></svg>`;
+const ICON_TRAIN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg"><path d="M6 15V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v9a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4Z"/><line x1="6" y1="11" x2="18" y2="11"/><line x1="9" y1="7" x2="9" y2="9.3"/><line x1="15" y1="7" x2="15" y2="9.3"/><circle cx="9" cy="18.3" r="1.1"/><circle cx="15" cy="18.3" r="1.1"/><line x1="4.7" y1="19" x2="6.7" y2="16.6"/><line x1="19.3" y1="19" x2="17.3" y2="16.6"/></svg>`;
+
+// Nur diese drei Mots fahren bei DVB/DB tatsächlich auf Straßen auf Rädern ohne
+// Schiene - alles andere (auch Fähre/Seilbahn, mangels eigenem Symbol) zeigt das
+// Bahn-Symbol, das als "Schienen-/sonstiges Fahrzeug"-Icon breiter gedacht ist.
+function motGroup(mot) {
+  return mot === "CityBus" || mot === "IntercityBus" || mot === "HailedSharedTaxi" ? "bus" : "rail";
+}
+function motIconSvg(mot) {
+  return motGroup(mot) === "bus" ? ICON_BUS : ICON_TRAIN;
+}
+
+let map, stopMarker, tileLayer;
+
+const TILE_URLS = {
+  dark: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+  light: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+};
 let selectedStop = null;
 let departures = [];
 let departureTimer = null;
@@ -64,6 +122,29 @@ let tripTickTimer = null;    // interpoliert zwischendurch clientseitig weiter (
 let history = [];
 let historyOpen = false;
 
+// Bereits abgefahrene, aber voraussichtlich noch nicht am Ziel angekommene Verbindungen
+// dieser Haltestelle. Ab dem Moment, in dem ein Bus/eine Bahn an der Haltestelle
+// vorbeigefahren ist, verschwindet er aus /dm (Departure Monitor) - ohne diese Liste
+// wäre er dann nicht mehr auffindbar, sobald man die Fahrt abwählt oder eine andere
+// anklickt. Nur für die aktuelle Sitzung/Haltestelle gedacht, nicht über Tage hinweg.
+let departedTrips = [];
+let departedOpen = true;
+// Merkt sich departedTrips je Haltestellen-Id, damit ein Wechsel zu einer anderen
+// Haltestelle und zurück die bisher beobachteten "noch unterwegs"-Fahrten NICHT verwirft
+// (das war der Hauptgrund, warum die Liste beim erneuten Auswählen leer wirkte). Wird
+// zusätzlich in localStorage gespiegelt, damit es auch einen Seiten-Reload übersteht.
+let departedByStop = {};
+// Nach dieser Zeit seit der Abfahrt an dieser Haltestelle nehmen wir an, dass die
+// Fahrt ihr Ziel erreicht hat, und blenden sie aus der Liste aus (grobe Schätzung,
+// da die API die tatsächliche Fahrzeit nicht vorab liefert).
+const DEPARTED_TRIP_MAX_AGE_MS = 75 * 60 * 1000;
+
+// Es gab hier früher einen "Frühere Abfahrten laden"-Button, der /dm mit einem
+// Zeitpunkt in der Vergangenheit abgefragt hat. Entfernt: Die VVO-API interpretiert
+// "time" bei /dm nicht rückwirkend, liefert immer nur Zukünftiges - der Button konnte
+// also grundsätzlich nie etwas finden (siehe buildEarlierHint() weiter unten für den
+// Ersatz-Hinweis, sowie das console.warn beim Testen, das genau das bestätigt hat).
+
 // Merkt sich, für welche Haltestellen der aktuellen Fahrt die Ankunfts-Animation
 // schon einmal gespielt wurde - so läuft sie pro Halt nur genau einmal, auch wenn
 // die Marker bei jedem Server-Refresh neu gezeichnet werden.
@@ -71,16 +152,34 @@ let arrivedStopIds = new Set();
 
 // ---------- API ----------
 
+// Timeout für alle Netzwerk-Aufrufe (VVO + DB): ohne das kann eine einzelne hängende
+// Anfrage (z.B. weil die fremde DB-API mal lahmt) den kompletten 20-Sekunden-Refresh
+// blockieren - die Abfahrtstafel würde dann scheinbar "einfrieren"/leer bleiben, statt
+// nach ein paar Sekunden einen Fehler zu zeigen und es beim nächsten Tick erneut zu
+// versuchen.
+const FETCH_TIMEOUT_MS = 8000;
+
+async function fetchWithTimeout(url, options) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchJSON(path, body) {
   let res;
   try {
-    res = await fetch(API_BASE + path, {
+    res = await fetchWithTimeout(API_BASE + path, {
       method: "POST",
       headers: { "Content-Type": "application/json; charset=utf-8" },
       body: JSON.stringify(body),
     });
   } catch (networkErr) {
-    // Browser verschleiert CORS-Fehler als generisches "Failed to fetch"
+    // Browser verschleiert CORS-Fehler als generisches "Failed to fetch"; ein
+    // AbortError kommt vom Timeout oben.
     throw new Error("Netzwerk/CORS-Fehler: " + networkErr.message);
   }
   if (!res.ok) throw new Error("HTTP " + res.status + " " + res.statusText);
@@ -107,14 +206,20 @@ async function findStops(query) {
     .filter(Boolean);
 }
 
-// Departure Monitor: Echtzeit-Abfahrten je Haltestelle
-async function getDepartures(stopId) {
+// Departure Monitor: Echtzeit-Abfahrten je Haltestelle.
+// "time" (optional, ISO8601) verschiebt den Abfragezeitpunkt - ohne Angabe liefert die
+// API die Abfahrten ab jetzt. Ein Zeitpunkt in der Vergangenheit wird hier NICHT
+// rückwirkend interpretiert (siehe Kommentar bei DEPARTED_TRIP_MAX_AGE_MS) - der
+// Parameter bleibt trotzdem stehen, für den Fall, dass er für zukünftige Zeitpunkte
+// (z.B. eine "später"-Ansicht) mal gebraucht wird.
+async function getDepartures(stopId, time) {
   const data = await fetchJSON("/dm", {
     stopid: stopId,
     limit: 20,
     shorttermchanges: true,
     mentzonly: false,
     isarrival: false,
+    ...(time ? { time } : {}),
   });
   return (data.Departures || []).map((d) => {
     const scheduled = parseVvoDate(d.ScheduledTime);
@@ -137,6 +242,85 @@ async function getDepartures(stopId) {
       realRaw: d.RealTime || d.ScheduledTime,
       scheduledRaw: d.ScheduledTime,
       delayMin: scheduled && real ? Math.round((real - scheduled) / 60000) : 0,
+    };
+  });
+}
+
+// ---------- DB Fernverkehr (v6.db.transport.rest) ----------
+// Eigene, öffentliche und CORS-freigegebene API (kein API-Key nötig, Basis auf
+// HAFAS) - komplett unabhängig von der VVO/DVB-API oben, da Fernverkehrszüge
+// (ICE/IC/EC/RE etc.) nicht Teil des DVB-Datensatzes sind. Liefert WGS84 direkt,
+// keine GK4-Umrechnung nötig.
+const DB_API_BASE = "https://v6.db.transport.rest";
+const DB_MATCH_RADIUS_M = 500; // wie nah eine gefundene DB-Station an der gewählten
+                                // DVB-Haltestelle liegen muss, um als "dieselbe Stelle"
+                                // zu gelten (Namen wie "Hauptbahnhof" gibt's mehrfach)
+const DB_WINDOW_MIN = 60;      // wie weit die DB-Abfahrtstafel nach vorne schaut
+
+// Merkt sich je DVB-Haltestellen-Id, ob (und welche) passende DB-Station gefunden
+// wurde - null heißt "geprüft, keine Station in der Nähe" (z.B. reine Bus-/Tram-Haltestellen
+// wie Wohngebiets-Stopps), damit nicht bei jedem Refresh erneut gesucht wird.
+const dbStopCache = {};
+
+async function fetchDbJSON(path) {
+  const res = await fetchWithTimeout(DB_API_BASE + path);
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
+
+// Sucht per Namen nach DB-Stationen und behält nur die, die wirklich in der Nähe
+// unserer Haltestelle liegen (Luftlinie, siehe haversineMeters weiter unten in
+// dieser Datei). So landen z.B. gleichnamige Haltestellen in anderen Städten nicht
+// fälschlich als "dieselbe Stelle".
+async function findDbStopForStop(stop) {
+  if (stop.id in dbStopCache) return dbStopCache[stop.id];
+  try {
+    const results = await fetchDbJSON(
+      "/locations?query=" + encodeURIComponent(stop.name) +
+      "&results=6&stops=true&addresses=false&poi=false"
+    );
+    let best = null, bestDist = Infinity;
+    for (const r of results || []) {
+      if (!r.location || r.location.latitude == null || r.location.longitude == null) continue;
+      const d = haversineMeters(stop, { lat: r.location.latitude, lng: r.location.longitude });
+      if (d < bestDist) { bestDist = d; best = r; }
+    }
+    const match = best && bestDist <= DB_MATCH_RADIUS_M ? { id: best.id, name: best.name } : null;
+    dbStopCache[stop.id] = match;
+    return match;
+  } catch (e) {
+    console.warn("[DVB Live] DB-Stationssuche fehlgeschlagen:", e.message);
+    return null; // nicht cachen - beim nächsten Refresh einfach erneut versuchen
+  }
+}
+
+// Departure Monitor-Äquivalent der DB-API. Antwortform ist mal ein direktes Array,
+// mal {departures:[...]} (je nach Instanz/Version) - beides abfangen.
+async function getDbDepartures(dbStop) {
+  const data = await fetchDbJSON(
+    "/stops/" + encodeURIComponent(dbStop.id) +
+    "/departures?duration=" + DB_WINDOW_MIN + "&results=25&remarks=false"
+  );
+  const list = Array.isArray(data) ? data : (data.departures || []);
+  return list.map((d) => {
+    const scheduled = d.plannedWhen ? new Date(d.plannedWhen) : null;
+    const real = d.when ? new Date(d.when) : scheduled;
+    const delayMin = d.delay != null ? Math.round(d.delay / 60)
+      : (scheduled && real ? Math.round((real - scheduled) / 60000) : 0);
+    return {
+      id: d.tripId || crypto.randomUUID(),
+      line: (d.line && d.line.name) || "?",
+      direction: d.direction || "",
+      mot: "Train", // alles auf dieser Schiene zeigt das Bahn-Symbol, s. motGroup()
+      platform: d.platform || null,
+      occupancy: null, // liefert diese API nicht ohne Zusatzabfrage - lieber nichts erfinden
+      scheduled,
+      real,
+      // eindeutig genug für depKey (Linie+Richtung+diesen String) - anders als bei
+      // VVO gibt es hier keine ".../Date(...)/"-Rohdaten zum Weiterreichen
+      scheduledRaw: "db:" + (d.tripId || `${d.line?.name}@${d.plannedWhen}`),
+      delayMin,
+      source: "db",
     };
   });
 }
@@ -340,7 +524,8 @@ function initMap() {
     maxZoom: 19,
   }).setView(DRESDEN_CENTER, 13);
 
-  // Esri-Kacheln - frei nutzbar, kein API-Key nötig.
+  // Esri-Kacheln - frei nutzbar, kein API-Key nötig. Je nach Hell-/Dunkelmodus eine
+  // von zwei zueinander passenden, zurückhaltenden Basiskarten (siehe setMapTheme).
   const tileOpts = {
     attribution: "Tiles &copy; Esri",
     maxZoom: 19,
@@ -350,10 +535,7 @@ function initMap() {
     bounds: saxonyBounds,
     keepBuffer: 4,
   };
-  L.tileLayer(
-    "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-    tileOpts
-  ).addTo(map);
+  tileLayer = L.tileLayer(TILE_URLS[currentTheme()], tileOpts).addTo(map);
 
   setupPanelToggle();
 }
@@ -509,6 +691,9 @@ function finishActiveTrip() {
   activeTrip.finished = true;
   clearInterval(tripRefreshTimer); tripRefreshTimer = null;
   markVehicleFinished();
+  // Jetzt bestätigt: diese Fahrt ist am Ziel angekommen - taucht daher nicht mehr
+  // unter "Bereits abgefahren · noch unterwegs" auf.
+  if (activeDep) removeDepartedTrip(depKey(activeDep));
   renderDepartures();
 }
 
@@ -555,6 +740,16 @@ async function showRouteForDeparture(dep) {
   clearActiveTrip(false); // vorherige Fahrt sofort ausblenden
   highlightedKey = key;
   activeDep = dep;
+
+  // DB-Fernverkehr nutzt eine andere API/Trip-Id als VVO's /dm/trip - hier also kein
+  // Live-Streckenverlauf auf der Karte, nur die aufgeklappte Zeile mit Hinweistext
+  // (s. buildTripDetails). Das ist eine bewusste Scope-Entscheidung, kein Bug.
+  if (dep.source === "db") {
+    activeTrip = null;
+    renderDepartures();
+    return;
+  }
+
   activeTrip = { stops: [], routePoints: [], color: colorForRoute(dep.line, dep.direction), loading: true };
   showPastStops = false;
   showUpcomingStops = false;
@@ -639,6 +834,134 @@ function reopenHistoryStop(entry) {
   selectStop({ id: entry.id, name: entry.name, city: entry.city, lat: entry.lat, lng: entry.lng });
 }
 
+// ---------- Bereits abgefahrene, noch unterwegs befindliche Verbindungen ----------
+
+// Vergleicht die vorherige mit der neuen Abfahrtsliste und merkt sich jede Fahrt, die
+// verschwunden ist (= an der Haltestelle vorbeigefahren), damit man sie später weiter
+// verfolgen kann - auch wenn man zwischenzeitlich eine andere Verbindung anklickt oder
+// die aktuell verfolgte Fahrt bewusst abwählt.
+function trackDepartedTrips(oldList, newList) {
+  if (!oldList || !oldList.length) return;
+  const stillThere = new Set(newList.map(depKey));
+  oldList.forEach((dep) => {
+    if (!stillThere.has(depKey(dep))) addDepartedTrip(dep);
+  });
+}
+
+function addDepartedTrip(dep) {
+  const key = depKey(dep);
+  departedTrips = [dep, ...departedTrips.filter((d) => depKey(d) !== key)].slice(0, 15);
+  pruneDepartedTrips();
+  renderDepartedList();
+}
+
+// Entfernt eine Fahrt gezielt aus der Liste - z.B. sobald sich beim Ansehen
+// herausstellt, dass sie ihr Ziel bereits erreicht hat.
+function removeDepartedTrip(key) {
+  const before = departedTrips.length;
+  departedTrips = departedTrips.filter((d) => depKey(d) !== key);
+  if (departedTrips.length !== before) {
+    syncDepartedForCurrentStop();
+    renderDepartedList();
+  }
+}
+
+// Entfernt Fahrten, deren Abfahrt an dieser Haltestelle zu lange her ist, um noch
+// unterwegs zu sein (grobe Heuristik, siehe DEPARTED_TRIP_MAX_AGE_MS).
+function pruneDepartedTrips() {
+  const cutoff = Date.now() - DEPARTED_TRIP_MAX_AGE_MS;
+  departedTrips = departedTrips.filter((d) => d.real && d.real.getTime() > cutoff);
+  syncDepartedForCurrentStop();
+}
+
+// ---------- Persistenz je Haltestelle (departedByStop) ----------
+//
+// Grund dafür, dass "frühere Busse" oft leer wirkte: departedTrips wurde bei jedem
+// selectStop() knallhart auf [] zurückgesetzt - auch beim erneuten Auswählen EINER
+// bereits vorher betrachteten Haltestelle. Beobachtete "noch unterwegs"-Fahrten gingen
+// also verloren, sobald man kurz zu einer anderen Haltestelle wechselte. departedByStop
+// hält sie stattdessen je Haltestellen-Id fest (zusätzlich in localStorage gespiegelt),
+// damit sie beim Zurückwechseln - und sogar nach einem Reload - wieder da sind.
+
+function syncDepartedForCurrentStop() {
+  if (!selectedStop) return;
+  if (departedTrips.length) departedByStop[selectedStop.id] = departedTrips;
+  else delete departedByStop[selectedStop.id];
+  persistDepartedByStop();
+}
+
+function persistDepartedByStop() {
+  try { localStorage.setItem(DEPARTED_STORAGE_KEY, JSON.stringify(departedByStop)); }
+  catch { /* Speicher voll oder Privatmodus - bleibt dann nur im Arbeitsspeicher */ }
+}
+
+// JSON kennt keine Date-Objekte - "scheduled"/"real" kommen aus localStorage als
+// ISO-Strings zurück und müssen für fmtTime()/Rechnungen wieder zu echten Dates werden.
+function reviveDepartedDates(dep) {
+  return Object.assign({}, dep, {
+    scheduled: dep.scheduled ? new Date(dep.scheduled) : null,
+    real: dep.real ? new Date(dep.real) : null,
+  });
+}
+
+function loadDepartedByStop() {
+  try {
+    const raw = localStorage.getItem(DEPARTED_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    Object.keys(parsed).forEach((id) => {
+      parsed[id] = (parsed[id] || []).map(reviveDepartedDates);
+    });
+    departedByStop = parsed;
+  } catch { departedByStop = {}; }
+  pruneDepartedByStopAll();
+}
+
+// Räumt beim Start einmal über ALLE gemerkten Haltestellen hinweg auf (nicht nur die
+// gerade gewählte) - sonst würden inzwischen längst angekommene Fahrten anderer,
+// zuletzt besuchter Haltestellen dauerhaft in localStorage herumliegen.
+function pruneDepartedByStopAll() {
+  const cutoff = Date.now() - DEPARTED_TRIP_MAX_AGE_MS;
+  Object.keys(departedByStop).forEach((id) => {
+    const kept = (departedByStop[id] || []).filter((d) => d.real && d.real.getTime() > cutoff);
+    if (kept.length) departedByStop[id] = kept;
+    else delete departedByStop[id];
+  });
+  persistDepartedByStop();
+}
+
+function renderDepartedList() {
+  pruneDepartedTrips();
+  // Die Sektion bleibt sichtbar, solange eine Haltestelle gewählt ist - auch ohne
+  // bereits bekannte abgefahrene Fahrten -, damit der Hinweistext (buildEarlierHint)
+  // immer sichtbar ist und nicht erst nach dem ersten live mitverfolgten Bus auftaucht.
+  if (!selectedStop) { departedSection.classList.add("hidden"); return; }
+  departedSection.classList.remove("hidden");
+  departedCountEl.textContent = departedTrips.length;
+  departedToggle.setAttribute("aria-expanded", departedOpen ? "true" : "false");
+  departedListEl.classList.toggle("hidden", !departedOpen);
+  if (!departedOpen) return;
+
+  departedListEl.innerHTML = "";
+  departedListEl.appendChild(buildEarlierHint());
+  // Die gerade aktiv angezeigte Fahrt taucht schon oben in der normalen Abfahrtstafel
+  // (angepinnt) auf - hier also nicht doppelt mit eigenem Aufklapp-Bereich anzeigen.
+  departedTrips
+    .filter((d) => depKey(d) !== highlightedKey)
+    .forEach((dep) => {
+      departedListEl.appendChild(buildDepartureItem(Object.assign({}, dep, { departed: true })));
+    });
+}
+
+// Ersatz für den früheren Nachlade-Button: ein kurzer, unauffälliger Hinweis statt
+// eines Buttons, der etwas verspricht, das die API nicht liefern kann (siehe
+// Kommentar bei DEPARTED_TRIP_MAX_AGE_MS oben). Bewusst klein gehalten.
+function buildEarlierHint() {
+  const p = document.createElement("p");
+  p.className = "earlier-hint";
+  p.textContent = "Nur ab jetzt beobachtete Fahrten – Vergangenes liefert die Haltestellen-API nicht.";
+  return p;
+}
+
 // ---------- UI ----------
 
 const searchSection = document.getElementById("searchSection");
@@ -655,6 +978,10 @@ const historySection = document.getElementById("historySection");
 const historyToggle = document.getElementById("historyToggle");
 const historyListEl = document.getElementById("historyList");
 const historyCountEl = document.getElementById("historyCount");
+const departedSection = document.getElementById("departedSection");
+const departedToggle = document.getElementById("departedToggle");
+const departedListEl = document.getElementById("departedList");
+const departedCountEl = document.getElementById("departedCount");
 
 // Die Suche lässt sich ein- und ausklappen, damit sie auf dem Handy nicht dauerhaft
 // den ganzen Bildschirm einnimmt. Nach Auswahl einer Haltestelle klappt sie
@@ -699,6 +1026,15 @@ function selectStop(stop) {
   stopNameEl.textContent = stop.name + ", " + stop.city;
   stopHeader.classList.remove("hidden");
   clearActiveTrip();
+  departures = [];
+  departuresList.innerHTML = `<li class="deps-loading">Abfahrten werden geladen …</li>`;
+  // Bisher hier fest auf [] gesetzt - dadurch gingen für diese Haltestelle schon
+  // beobachtete "noch unterwegs"-Fahrten verloren, sobald man zwischenzeitlich eine
+  // andere Haltestelle angesehen hatte. Jetzt: aus departedByStop wiederherstellen.
+  departedTrips = (departedByStop[stop.id] || []).slice();
+  departedOpen = true;
+  pruneDepartedTrips(); // falls seit dem letzten Besuch schon zu viel Zeit vergangen ist
+  renderDepartedList();
   showStopOnMap(stop);
   restartTimers();
   addStopToHistory(stop);
@@ -711,6 +1047,9 @@ clearStopBtn.addEventListener("click", () => {
   stopHeader.classList.add("hidden");
   departuresList.innerHTML = "";
   clearActiveTrip();
+  departedTrips = [];
+  departedOpen = true;
+  renderDepartedList();
   clearInterval(departureTimer);
   searchInput.value = "";
   setSearchOpen(true);
@@ -721,24 +1060,88 @@ historyToggle.addEventListener("click", () => {
   renderHistory();
 });
 
+departedToggle.addEventListener("click", () => {
+  departedOpen = !departedOpen;
+  renderDepartedList();
+});
+
 function restartTimers() {
   clearInterval(departureTimer);
   refreshDepartures();
   departureTimer = setInterval(refreshDepartures, 20000);
 }
 
+// Verhindert überlappende Durchläufe: Falls ein Refresh (z.B. wegen einer lahmen
+// DB-Antwort) länger als die 20s bis zum nächsten Timer-Tick braucht, würde sonst ein
+// zweiter, paralleler Durchlauf starten - beide schreiben am Ende auf dieselbe
+// "departures"-Variable, was zu Flackern/inkonsistenten Zwischenständen führen kann.
+let refreshInFlight = false;
+
+function byRealTime(a, b) {
+  return (a.real ? a.real.getTime() : 0) - (b.real ? b.real.getTime() : 0);
+}
+
 async function refreshDepartures() {
-  if (!selectedStop) return;
+  if (!selectedStop || refreshInFlight) return;
+  const stop = selectedStop;
+  refreshInFlight = true;
   try {
-    departures = await getDepartures(selectedStop.id);
+    const previous = departures;
+    const dvbDeps = await getDepartures(stop.id);
+    if (selectedStop !== stop) return; // zwischenzeitlich andere Haltestelle gewählt
+
+    // WICHTIG: Erst hier schon rendern, mit den DVB-Daten allein - nicht auf die
+    // DB-Abfrage weiter unten warten. Die DB-Stationssuche braucht bei einer
+    // Haltestelle, die noch nie geprüft wurde, einen eigenen Netzwerk-Umweg (Locations-
+    // Lookup), und das hat vorher das allererste Anzeigen der ganz normalen
+    // DVB-Abfahrten unnötig um ein paar Sekunden verzögert. Schon bekannte DB-Einträge
+    // aus dem letzten Durchlauf bleiben dabei erhalten, damit sie nicht kurz
+    // verschwinden und gleich wieder auftauchen.
+    const previousDb = previous.filter((d) => d.source === "db");
+    let combined = dvbDeps.concat(previousDb).sort(byRealTime);
+    departures = combined;
+    // Alles, was eben noch in der Abfahrtstafel stand und jetzt fehlt, ist an der
+    // Haltestelle vorbeigefahren - für "Bereits abgefahren · noch unterwegs" merken.
+    trackDepartedTrips(previous, departures);
     renderDepartures();
     hideError();
+
+    // DB-Fernverkehr jetzt NACHTRÄGLICH dazuladen und einmischen, ohne die schon
+    // sichtbare DVB-Anzeige zu blockieren. Fehler hier betreffen nur den DB-Teil,
+    // deshalb eigenes try/catch statt im äußeren.
+    try {
+      const dbStop = await findDbStopForStop(stop);
+      if (!dbStop || selectedStop !== stop) return;
+      const dbDeps = await getDbDepartures(dbStop);
+      if (selectedStop !== stop) return;
+      const beforeDbUpdate = departures;
+      const withoutOldDb = departures.filter((d) => d.source !== "db");
+      departures = withoutOldDb.concat(dbDeps).sort(byRealTime);
+      trackDepartedTrips(beforeDbUpdate, departures);
+      renderDepartures();
+    } catch (e) {
+      console.warn("[DVB Live] DB-Abfahrten aktuell nicht verfügbar:", e.message);
+    }
   } catch {
     showError("Abfahrten aktuell nicht verfügbar.");
+    // Falls das der allererste Ladeversuch für diese Haltestelle war (Liste also noch
+    // leer ist), bis zum nächsten regulären Tick 20s zu warten, fühlt sich an wie
+    // "nichts lädt". Stattdessen einmalig schneller erneut versuchen.
+    if (selectedStop === stop && departures.length === 0) {
+      setTimeout(() => { if (selectedStop === stop) refreshDepartures(); }, 3000);
+    }
+  } finally {
+    refreshInFlight = false;
   }
 }
 
-function depKey(dep) { return dep.id + "|" + dep.scheduledRaw; }
+// Eindeutiger Schlüssel je Verbindung. Bewusst NICHT über dep.id, weil die API dieses
+// Feld manchmal weglässt (siehe getDepartures - dort fällt es dann auf eine bei jedem
+// Abruf neue Zufalls-ID zurück). Das führte dazu, dass ein und derselbe Bus von einem
+// Abruf zum nächsten plötzlich als "andere" Verbindung galt und fälschlich sofort als
+// abgefahren erkannt wurde. Linie + Richtung + planmäßige Abfahrtszeit an dieser
+// Haltestelle sind dagegen für einen konkreten Umlauf stabil.
+function depKey(dep) { return dep.line + "|" + dep.direction + "|" + dep.scheduledRaw; }
 
 function escapeHtml(str) {
   return String(str == null ? "" : str).replace(/[&<>"']/g, (c) =>
@@ -774,10 +1177,10 @@ function renderDepartures() {
 
   const list = departures.slice();
   // Die angeklickte Fahrt verschwindet aus der Abfahrtstafel, sobald der Bus weg ist.
-  // Damit "der Bus der Bus bleibt", hängen wir sie dann oben als abgefahrene Fahrt an,
-  // statt die Auswahl einfach fallen zu lassen.
+  // Damit "der Bus der Bus bleibt", hängen wir sie dann als abgefahrene Fahrt an - ganz
+  // unten (nicht oben), damit kommende Abfahrten immer zuerst zu sehen sind.
   if (activeDep && !list.some((d) => depKey(d) === depKey(activeDep))) {
-    list.unshift(Object.assign({}, activeDep, { departed: true }));
+    list.push(Object.assign({}, activeDep, { departed: true }));
   }
 
   list.forEach((dep) => departuresList.appendChild(buildDepartureItem(dep)));
@@ -790,13 +1193,18 @@ function buildDepartureItem(dep) {
   li.className = "dep-item" + (isActive ? " active" : "") + (dep.departed ? " departed" : "");
 
   const d = delayInfo(dep.delayMin || 0);
+  const isDb = dep.source === "db";
   const row = document.createElement("div");
   row.className = "departure";
   row.innerHTML = `
-    <div class="line-badge" style="background:${colorForRoute(dep.line, dep.direction)}">${escapeHtml(dep.line)}</div>
+    <div class="line-badge${isDb ? " db-badge" : ""}"${isDb ? "" : ` style="background:${colorForRoute(dep.line, dep.direction)}"`}>
+      <span class="mot-icon">${motIconSvg(dep.mot)}</span>
+      <span class="line-num">${escapeHtml(dep.line)}</span>
+    </div>
     <div class="dep-info">
       <div class="direction"><span class="label">${escapeHtml(dep.direction)}</span></div>
       <div class="sub">
+        ${isDb ? `<span class="tag db-tag">DB</span>` : ""}
         ${dep.platform ? `<span>Steig ${escapeHtml(dep.platform)}</span>` : ""}
         ${dep.departed ? `<span class="tag">abgefahren</span>` : ""}
         ${occupancyHtml(dep.occupancy)}
@@ -818,6 +1226,11 @@ function buildDepartureItem(dep) {
 function buildTripDetails() {
   const box = document.createElement("div");
   box.className = "trip-details";
+
+  if (activeDep && activeDep.source === "db") {
+    box.innerHTML = `<p class="trip-hint">Live-Streckenverlauf auf der Karte gibt es aktuell nur für DVB-Fahrten - DB-Züge laufen über eine eigene, unabhängige API ohne Kartendaten hier.</p>`;
+    return box;
+  }
 
   if (!activeTrip || activeTrip.loading) {
     box.innerHTML = `<p class="trip-hint">Haltestellen werden geladen …</p>`;
@@ -967,6 +1380,8 @@ function showError(msg) {
 }
 function hideError() { errorState.classList.add("hidden"); }
 
+initThemeToggle();
 initMap();
 loadHistory();
 renderHistory();
+loadDepartedByStop();
